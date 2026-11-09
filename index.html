@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Quiz Buzzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .buzzer-btn {
+            box-shadow: 0 15px 0 #7f1d1d; /* Dark red shadow for 3D effect */
+            transition: all 0.1s;
+        }
+        .buzzer-btn:active, .buzzer-btn:disabled {
+            transform: translateY(15px);
+            box-shadow: 0 0 0 #7f1d1d;
+        }
+        .buzzer-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen flex flex-col items-center p-4 font-sans">
+
+    <!-- JOIN SCREEN -->
+    <div id="join-screen" class="mt-20 w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
+        <h1 class="text-3xl font-bold mb-6 text-slate-800">Family Quiz Night</h1>
+        <p class="text-slate-500 mb-6">Enter your name to join the buzzer system.</p>
+        <input type="text" id="player-name" placeholder="Your Name" class="w-full border-2 border-slate-300 rounded-lg p-3 text-lg mb-4 text-center focus:outline-none focus:border-blue-500 autocomplete="off">
+        <button id="join-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg transition-colors">Join Game</button>
+    </div>
+
+    <!-- GAME SCREEN (Hidden by default) -->
+    <div id="game-screen" class="hidden w-full max-w-lg flex-col items-center mt-10">
+        <div class="flex justify-between items-center w-full mb-8 px-4">
+            <div class="text-lg font-semibold text-slate-600">Player: <span id="display-name" class="text-blue-600"></span></div>
+            <button id="reset-btn" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded font-semibold text-sm transition-colors">Reset Buzzers</button>
+        </div>
+
+        <!-- THE BUZZER -->
+        <div class="my-10">
+            <button id="buzzer-btn" class="buzzer-btn bg-red-600 rounded-full w-64 h-64 flex items-center justify-center border-4 border-red-800 focus:outline-none">
+                <span class="text-white text-5xl font-black tracking-wider uppercase drop-shadow-md">Buzz</span>
+            </button>
+        </div>
+
+        <!-- RESULTS AREA -->
+        <div id="results-area" class="w-full bg-white rounded-2xl shadow-lg p-6 mt-6 opacity-0 transition-opacity duration-300">
+            <h2 class="text-center text-slate-500 font-semibold mb-4 uppercase tracking-widest text-sm">Results</h2>
+            
+            <!-- Winner -->
+            <div class="bg-yellow-100 border-2 border-yellow-400 rounded-xl p-4 text-center mb-4">
+                <div class="text-yellow-600 text-sm font-bold uppercase mb-1">First Place</div>
+                <div id="winner-name" class="text-3xl font-black text-slate-800">...</div>
+            </div>
+
+            <!-- Runners up -->
+            <div id="runners-up" class="space-y-2">
+                <!-- Runners up will be injected here via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- FIREBASE & LOGIC -->
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getDatabase, ref, push, onValue, set } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+        // Your specific Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBjyOOL1Y9qGzql_FWvYfjxGx1FukoUH0I",
+            authDomain: "kvs-memories.firebaseapp.com",
+            databaseURL: "https://kvs-memories-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "kvs-memories",
+            storageBucket: "kvs-memories.firebasestorage.app",
+            messagingSenderId: "62349854159",
+            appId: "1:62349854159:web:0d26b214c54dcf00c5beba",
+            measurementId: "G-WB76L4JGET"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const buzzersRef = ref(db, 'buzzers');
+
+        // App State
+        let currentPlayerName = "";
+        let hasBuzzed = false;
+
+        // DOM Elements
+        const joinScreen = document.getElementById('join-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const playerNameInput = document.getElementById('player-name');
+        const joinBtn = document.getElementById('join-btn');
+        const displayName = document.getElementById('display-name');
+        const buzzerBtn = document.getElementById('buzzer-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const resultsArea = document.getElementById('results-area');
+        const winnerName = document.getElementById('winner-name');
+        const runnersUpContainer = document.getElementById('runners-up');
+
+        // 1. Join Game Logic
+        joinBtn.addEventListener('click', () => {
+            const name = playerNameInput.value.trim();
+            if (name.length > 0) {
+                currentPlayerName = name;
+                displayName.textContent = currentPlayerName;
+                joinScreen.classList.add('hidden');
+                gameScreen.classList.remove('hidden');
+                gameScreen.classList.add('flex');
+            } else {
+                alert("Please enter a name first!");
+            }
+        });
+
+        // 2. Buzz Logic
+        buzzerBtn.addEventListener('click', () => {
+            if (!hasBuzzed) {
+                hasBuzzed = true;
+                buzzerBtn.disabled = true; // Disable local button immediately
+                
+                // Push standard local timestamp to maintain accurate chronological order
+                push(buzzersRef, {
+                    name: currentPlayerName,
+                    time: Date.now()
+                });
+            }
+        });
+
+        // 3. Reset Logic (Host controls)
+        resetBtn.addEventListener('click', () => {
+            // Wipes the database reference to reset everyone's screen
+            set(buzzersRef, null);
+        });
+
+        // 4. Real-time Synchronization Listener
+        onValue(buzzersRef, (snapshot) => {
+            const data = snapshot.val();
+            
+            if (data) {
+                // We have buzzes! Convert object to array and sort by time
+                const buzzes = Object.values(data).sort((a, b) => a.time - b.time);
+                
+                // If there are buzzes, show results and disable the buzzer for everyone
+                if (buzzes.length > 0) {
+                    buzzerBtn.disabled = true;
+                    hasBuzzed = true;
+                    resultsArea.classList.remove('opacity-0');
+                    
+                    // Display First Place
+                    winnerName.textContent = buzzes[0].name;
+                    
+                    // Display Runners up
+                    runnersUpContainer.innerHTML = '';
+                    for (let i = 1; i < buzzes.length; i++) {
+                        const runnerUpEl = document.createElement('div');
+                        runnerUpEl.className = "flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200";
+                        runnerUpEl.innerHTML = `
+                            <span class="text-slate-600 font-bold">#${i + 1}</span>
+                            <span class="text-slate-800 font-medium">${buzzes[i].name}</span>
+                        `;
+                        runnersUpContainer.appendChild(runnerUpEl);
+                    }
+                }
+            } else {
+                // Data is null, which means a Reset happened
+                hasBuzzed = false;
+                buzzerBtn.disabled = false;
+                resultsArea.classList.add('opacity-0');
+                winnerName.textContent = "...";
+                runnersUpContainer.innerHTML = '';
+            }
+        });
+    </script>
+</body>
+</html>
